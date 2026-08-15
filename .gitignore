@@ -1,0 +1,21 @@
+#Virtual envionment
+.venv/
+
+#API keys / environment variables
+.env
+
+#Python cache
+__pycache__/
+*.pyc 
+
+#Pytest
+.pytest_cache/
+
+#Generated charts
+charts/*.png
+
+#Generated reports
+reports/*.pdf
+
+#Logs
+logs/*.log
