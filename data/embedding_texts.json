@@ -1,0 +1,6 @@
+[
+    "Date: 2026-01-01 00:00:00 | Branch: Karachi | Type: Deposit | Amount: 50000",
+    "Date: 2026-01-02 00:00:00 | Branch: Lahore | Type: Withdrawal | Amount: 20000",
+    "Date: 2026-01-03 00:00:00 | Branch: Karachi | Type: Withdrawal | Amount: 90000",
+    "Date: 2026-01-04 00:00:00 | Branch: Islamabad | Type: Deposit | Amount: 15000"
+]
