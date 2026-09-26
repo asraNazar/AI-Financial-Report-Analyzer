@@ -199,3 +199,63 @@ def test_calculate_total_transaction_amount():
     )
 
     assert result == "Total transaction amount is 175,000."
+
+
+def test_calculate_karachi_total_transaction():
+    from src.data_loader import load_excel
+    from src.validator import validate_dataframe
+    from src.cleaner import clean_dataFrame
+    from src.rag import calculate_financial_answer
+    from config import DATA_DIR 
+
+    df = load_excel(DATA_DIR / "transactions.xlsx")
+    validate_dataframe(df)
+    df = clean_dataFrame(df)
+    answer=calculate_financial_answer(
+        df,
+        "What is the total transaction amount in Karachi?"
+    )
+
+    assert answer == (
+        "Total transaction amount in Karachi is 140,000."
+    )
+
+def test_calculate_karachi_withdrawal():
+    from src.data_loader import load_excel
+    from src.validator import validate_dataframe
+    from src.cleaner import clean_dataFrame
+    from src.rag import calculate_financial_answer
+    from config import DATA_DIR
+
+    df = load_excel(DATA_DIR / "transactions.xlsx")
+    validate_dataframe(df)
+    df = clean_dataFrame(df)
+
+    answer = calculate_financial_answer(
+        df,
+        "What is the total withdrawal amount in Karachi?"
+    )
+
+    assert answer == (
+        "Total withdrawal amount in Karachi is 90,000."
+    )
+
+def test_calculate_karachi_deposit():
+    from src.data_loader import load_excel
+    from src.validator import validate_dataframe
+    from src.cleaner import clean_dataFrame
+    from src.rag import calculate_financial_answer
+    from config import DATA_DIR
+
+    df = load_excel(DATA_DIR / "transactions.xlsx")
+    validate_dataframe(df)
+    df = clean_dataFrame(df)
+
+    answer = calculate_financial_answer(
+        df,
+        "What is the total deposit amount in Karachi?"
+    )
+
+    assert answer == (
+        "Total deposit amount in Karachi is 50,000."
+    )

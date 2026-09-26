@@ -6,6 +6,7 @@ from src.semantic_search import search_transactions
 
 from src.logger import logger
 from src.analyzer import analyze_transactions
+from src.query_parser import parse_query
 
 
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -44,81 +45,103 @@ def extract_filters(query: str):
 
     return branch, transaction_type
 
-def classify_question(query: str):
-    """
-    Classify a financial question into a basic question type.
-    """
 
+def classify_question(query:str):
+    """
+    Classify a user question using semantic query parsing.
+    """
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
+    parsed_query = parse_query(query)
+    if parsed_query["intent"] == "transaction_lookup":
+       return "transaction"
+    return "calculation"
 
-    query_lower = query.lower()
-
-    calculation_keywords = [
-        "total",
-        "sum",
-        "average",
-        "difference",
-        "highest",
-        "lowest",
-        "maximum",
-        "minimum",
-        "how much",
-        "amount"
-    ]
-
-    for keyword in calculation_keywords:
-        if keyword in query_lower:
-            return "calculation"
-
-    return "transaction"
 
 def calculate_financial_answer(df, query: str):
     """
     Calculate financial metrics based on the user's question.
+    Supports overall and branch-specific calculations.
     """
 
     results = analyze_transactions(df)
 
-    query_lower = query.lower()
+    parsed_query = parse_query(query)
 
-    if "withdrawal" in query_lower and "total" in query_lower:
+    branch = parsed_query["branch"]
+    transaction_type = parsed_query["transaction_type"]
+    intent = parsed_query["intent"]
+
+    # Filter data by branch
+    filtered_df = df
+
+    if branch:
+        filtered_df = filtered_df[
+            filtered_df["Branch"].str.lower() == branch.lower()
+        ]
+
+    # Filter data by transaction type
+    if transaction_type:
+        filtered_df = filtered_df[
+            filtered_df["Type"].str.lower() == transaction_type.lower()
+        ]
+
+    location = f" in {branch}" if branch else ""
+
+    # Total withdrawal
+    if intent == "total_withdrawal":
+        amount = filtered_df["Amount"].sum()
+
         return (
-            f"Total withdrawal amount is "
-            f"{results['total_withdrawals']:,.0f}."
+            f"Total withdrawal amount{location} is "
+            f"{amount:,.0f}."
         )
 
-    if "deposit" in query_lower and "total" in query_lower:
+    # Total deposit
+    if intent == "total_deposit":
+        amount = filtered_df["Amount"].sum()
+
         return (
-            f"Total deposit amount is "
-            f"{results['total_deposits']:,.0f}."
+            f"Total deposit amount{location} is "
+            f"{amount:,.0f}."
         )
 
-    if "total transaction amount" in query_lower:
+    # Total transaction amount
+    if intent == "total_transaction_amount":
+        amount = filtered_df["Amount"].sum()
+
         return (
-            f"Total transaction amount is "
-            f"{results['total_amount']:,.0f}."
+            f"Total transaction amount{location} is "
+            f"{amount:,.0f}."
         )
 
-    if "highest transaction" in query_lower:
+    # Highest transaction
+    if intent == "highest_transaction":
+        amount = filtered_df["Amount"].max()
+
         return (
-            f"The highest transaction amount is "
-            f"{results['highest_transactions']:,.0f}."
+            f"The highest transaction amount{location} is "
+            f"{amount:,.0f}."
         )
 
-    if "lowest transaction" in query_lower:
+    # Lowest transaction
+    if intent == "lowest_transaction":
+        amount = filtered_df["Amount"].min()
+
         return (
-            f"The lowest transaction amount is "
-            f"{results['lowest_transactions']:,.0f}."
+            f"The lowest transaction amount{location} is "
+            f"{amount:,.0f}."
         )
 
-    if "most active branch" in query_lower:
+    # Most active branch
+    if intent == "most_active_branch":
         return (
             f"The most active branch is "
             f"{results['most_active_branch']}."
         )
 
-    if "least active branch" in query_lower:
+    # Least active branch
+    if intent == "least_active_branch":
         return (
             f"The least active branch is "
             f"{results['least_active_branch']}."
