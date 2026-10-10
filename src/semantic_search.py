@@ -10,7 +10,8 @@ def search_transactions(
     top_k: int = 3,
     branch: str | None = None,
     transaction_type: str | None = None,
-    minimum_score:float=0.40
+    minimum_score: float = 0.40,
+    query_embedding=None,
 ):
     """
     Find the most relevant transactions for a user query.
@@ -18,8 +19,11 @@ def search_transactions(
     Optional filters:
         branch: Filter by branch, e.g. "Karachi"
         transaction_type: Filter by type, e.g. "Withdrawal"
-    """
 
+    query_embedding:
+        Optional pre-computed embedding to avoid creating
+        the same query embedding multiple times.
+    """
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
 
@@ -28,14 +32,21 @@ def search_transactions(
 
     texts, embeddings = load_embeddings()
 
-    query_embedding = create_embeddings([query])[0]
+    if query_embedding is None:
+        query_embedding = create_embeddings([query])[0]
 
     query_norm = np.linalg.norm(query_embedding)
-    embedding_norms = np.linalg.norm(embeddings, axis=1)
+
+    embedding_norms = np.linalg.norm(
+        embeddings,
+        axis=1,
+    )
 
     similarities = (
         embeddings @ query_embedding
-    ) / (embedding_norms * query_norm)
+    ) / (
+        embedding_norms * query_norm
+    )
 
     candidates = []
 
@@ -51,18 +62,20 @@ def search_transactions(
             {
                 "index": index,
                 "text": text,
-                "score": float(similarities[index])
+                "score": float(similarities[index]),
             }
         )
 
     candidates.sort(
         key=lambda result: result["score"],
-        reverse=True
+        reverse=True,
     )
 
-    results = [result
-                         for result in candidates
-                         if result["score"]>=minimum_score][:top_k]
+    results = [
+        result
+        for result in candidates
+        if result["score"] >= minimum_score
+    ][:top_k]
 
     logger.info(
         f"Semantic search completed for query: '{query}'"

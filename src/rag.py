@@ -3,7 +3,6 @@ from openai import OpenAI, OpenAIError
 from config import OPENAI_API_KEY
 
 from src.semantic_search import search_transactions
-
 from src.logger import logger
 from src.analyzer import analyze_transactions
 from src.query_parser import parse_query
@@ -15,133 +14,113 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def extract_filters(query: str):
     """
     Extract branch and transaction type from a user query.
+
+    Uses the central query parser instead of maintaining
+    separate filter-detection logic.
     """
-
-    query_lower = query.lower()
-
-    branch = None
-    transaction_type = None
-
-    branches = [
-        "Karachi",
-        "Lahore",
-        "Islamabad"
-    ]
-
-    transaction_types = [
-        "Deposit",
-        "Withdrawal"
-    ]
-
-    for item in branches:
-        if item.lower() in query_lower:
-            branch = item
-            break
-
-    for item in transaction_types:
-        if item.lower() in query_lower:
-            transaction_type = item
-            break
-
-    return branch, transaction_type
-
-
-def classify_question(query:str):
-    """
-    Classify a user question using semantic query parsing.
-    """
-    if not query or not query.strip():
-        raise ValueError("Query cannot be empty")
     parsed_query = parse_query(query)
+
+    return (
+        parsed_query["branch"],
+        parsed_query["transaction_type"],
+    )
+
+
+def classify_question(query: str):
+    """
+    Classify a user question using the central query parser.
+    """
+    parsed_query = parse_query(query)
+
     if parsed_query["intent"] == "transaction_lookup":
-       return "transaction"
+        return "transaction"
+
     return "calculation"
 
 
-def calculate_financial_answer(df, query: str):
+def calculate_financial_answer(
+    df,
+    query: str,
+    parsed_query: dict | None = None,
+):
     """
     Calculate financial metrics based on the user's question.
+
     Supports overall and branch-specific calculations.
     """
+    if parsed_query is None:
+        parsed_query = parse_query(query)
 
-    results = analyze_transactions(df)
-
-    parsed_query = parse_query(query)
-
+    intent = parsed_query["intent"]
     branch = parsed_query["branch"]
     transaction_type = parsed_query["transaction_type"]
-    intent = parsed_query["intent"]
 
-    # Filter data by branch
     filtered_df = df
 
+    # Filter by branch
     if branch:
         filtered_df = filtered_df[
             filtered_df["Branch"].str.lower() == branch.lower()
         ]
 
-    # Filter data by transaction type
+    # Filter by transaction type
     if transaction_type:
         filtered_df = filtered_df[
-            filtered_df["Type"].str.lower() == transaction_type.lower()
+            filtered_df["Type"].str.lower()
+            == transaction_type.lower()
         ]
 
     location = f" in {branch}" if branch else ""
 
-    # Total withdrawal
-    if intent == "total_withdrawal":
+    # Total calculations
+    total_intents = {
+        "total_withdrawal": "Total withdrawal amount",
+        "total_deposit": "Total deposit amount",
+        "total_transaction_amount": "Total transaction amount",
+    }
+
+    if intent in total_intents:
         amount = filtered_df["Amount"].sum()
 
         return (
-            f"Total withdrawal amount{location} is "
+            f"{total_intents[intent]}{location} is "
             f"{amount:,.0f}."
         )
 
-    # Total deposit
-    if intent == "total_deposit":
-        amount = filtered_df["Amount"].sum()
+    # Highest / lowest transaction
+    if intent in {
+        "highest_transaction",
+        "lowest_transaction",
+    }:
+        if filtered_df.empty:
+            return "No matching transactions found."
+
+        if intent == "highest_transaction":
+            amount = filtered_df["Amount"].max()
+            label = "highest"
+
+        else:
+            amount = filtered_df["Amount"].min()
+            label = "lowest"
 
         return (
-            f"Total deposit amount{location} is "
+            f"The {label} transaction amount{location} is "
             f"{amount:,.0f}."
         )
 
-    # Total transaction amount
-    if intent == "total_transaction_amount":
-        amount = filtered_df["Amount"].sum()
+    # Branch activity calculations
+    if intent in {
+        "most_active_branch",
+        "least_active_branch",
+    }:
+        results = analyze_transactions(df)
 
-        return (
-            f"Total transaction amount{location} is "
-            f"{amount:,.0f}."
-        )
+        if intent == "most_active_branch":
+            return (
+                f"The most active branch is "
+                f"{results['most_active_branch']}."
+            )
 
-    # Highest transaction
-    if intent == "highest_transaction":
-        amount = filtered_df["Amount"].max()
-
-        return (
-            f"The highest transaction amount{location} is "
-            f"{amount:,.0f}."
-        )
-
-    # Lowest transaction
-    if intent == "lowest_transaction":
-        amount = filtered_df["Amount"].min()
-
-        return (
-            f"The lowest transaction amount{location} is "
-            f"{amount:,.0f}."
-        )
-
-    # Most active branch
-    if intent == "most_active_branch":
-        return (
-            f"The most active branch is "
-            f"{results['most_active_branch']}."
-        )
-
-    # Least active branch
-    if intent == "least_active_branch":
         return (
             f"The least active branch is "
             f"{results['least_active_branch']}."
@@ -149,35 +128,45 @@ def calculate_financial_answer(df, query: str):
 
     return "I could not determine the requested calculation."
 
+
 def retrieve_context(
     query: str,
     top_k: int = 3,
     branch: str | None = None,
-    transaction_type: str | None = None
+    transaction_type: str | None = None,
+    parsed_query: dict | None = None,
 ):
     """
     Retrieve relevant transactions for a user query.
 
-    Automatically detects branch and transaction type
-    when they are not explicitly provided.
+    If parsed_query is provided, its branch, transaction type,
+    and query embedding are reused.
     """
-
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
 
-    detected_branch, detected_type = extract_filters(query)
+    if parsed_query is None:
+        parsed_query = parse_query(query)
 
-    if branch is None:
-        branch = detected_branch
+    # Explicit arguments override parsed values.
+    selected_branch = (
+        branch
+        if branch is not None
+        else parsed_query["branch"]
+    )
 
-    if transaction_type is None:
-        transaction_type = detected_type
+    selected_type = (
+        transaction_type
+        if transaction_type is not None
+        else parsed_query["transaction_type"]
+    )
 
     results = search_transactions(
         query,
         top_k=top_k,
-        branch=branch,
-        transaction_type=transaction_type
+        branch=selected_branch,
+        transaction_type=selected_type,
+        query_embedding=parsed_query["query_embedding"],
     )
 
     if not results:
@@ -197,30 +186,36 @@ def retrieve_context(
     return context
 
 
-def ask_rag(query: str,df=None, top_k: int = 3):
+def ask_rag(
+    query: str,
+    df=None,
+    top_k: int = 3,
+):
     """
     Answer a user question using retrieved transaction context.
     """
-
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
 
-    question_type = classify_question(query)
+    # Parse the query only once.
+    parsed_query = parse_query(query)
 
-    if question_type == "calculation":
+    if parsed_query["intent"] != "transaction_lookup":
 
         if df is None:
-            return (
-                "Calculation requires transaction data."
-            )
+            return "Calculation requires transaction data."
 
         return calculate_financial_answer(
             df,
-            query
+            query,
+            parsed_query=parsed_query,
         )
+
+    # Reuse parsed query and query embedding.
     context = retrieve_context(
         query,
-        top_k=top_k
+        top_k=top_k,
+        parsed_query=parsed_query,
     )
 
     if not context:
@@ -251,21 +246,26 @@ Provide a clear and concise answer.
     try:
         response = client.responses.create(
             model="gpt-5.5",
-            input=prompt
+            input=prompt,
         )
 
         answer = response.output_text
 
-        logger.info("RAG answer generated successfully")
+        logger.info(
+            "RAG answer generated successfully"
+        )
 
         return answer
 
     except OpenAIError as error:
-        logger.error(f"OpenAI API error: {error}")
+        logger.error(
+            f"OpenAI API error: {error}"
+        )
 
         clean_data = get_clean_transaction_data(
             query,
-            top_k=top_k
+            top_k=top_k,
+            parsed_query=parsed_query,
         )
 
         return (
@@ -274,43 +274,50 @@ Provide a clear and concise answer.
         )
 
 
-def test_rag(query: str, top_k: int = 3):
+def test_rag(
+    query: str,
+    top_k: int = 3,
+):
     """
     Test the RAG retrieval pipeline without calling OpenAI API.
     """
+    parsed_query = parse_query(query)
 
     context = retrieve_context(
         query,
-        top_k=top_k
+        top_k=top_k,
+        parsed_query=parsed_query,
     )
 
     if not context:
         return "I could not find relevant transactions."
 
-    answer = f"""
-Based on the retrieved transaction data:
-
-{context}
-"""
-
-    return answer
+    return (
+        "Based on the retrieved transaction data:\n\n"
+        f"{context}"
+    )
 
 
 def get_clean_transaction_data(
     query: str,
-    top_k: int = 3
+    top_k: int = 3,
+    parsed_query: dict | None = None,
 ):
     """
     Retrieve transactions and return clean user-facing data.
     """
+    if not query or not query.strip():
+        raise ValueError("Query cannot be empty")
 
-    branch, transaction_type = extract_filters(query)
+    if parsed_query is None:
+        parsed_query = parse_query(query)
 
     results = search_transactions(
         query,
         top_k=top_k,
-        branch=branch,
-        transaction_type=transaction_type
+        branch=parsed_query["branch"],
+        transaction_type=parsed_query["transaction_type"],
+        query_embedding=parsed_query["query_embedding"],
     )
 
     if not results:
@@ -319,7 +326,6 @@ def get_clean_transaction_data(
     formatted_transactions = []
 
     for result in results:
-
         text = result["text"]
 
         parts = [
@@ -349,7 +355,9 @@ def get_clean_transaction_data(
             f"Amount: {amount if amount else 'N/A'}"
         )
 
-        formatted_transactions.append(formatted_transaction)
+        formatted_transactions.append(
+            formatted_transaction
+        )
 
     formatted_transactions = "\n\n".join(
         formatted_transactions

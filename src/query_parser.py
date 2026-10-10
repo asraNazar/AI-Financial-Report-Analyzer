@@ -9,109 +9,93 @@ INTENT_EXAMPLES = {
         "What is the total transaction amount?",
         "How much money was involved in all transactions?",
         "What is the total amount of transactions?",
-        "How much was the total transaction value?"
+        "How much was the total transaction value?",
     ],
-
     "total_deposit": [
         "What is the total deposit amount?",
         "How much money was deposited?",
         "What is the total amount deposited?",
-        "How much was deposited?"
+        "How much was deposited?",
     ],
-
     "total_withdrawal": [
         "What is the total withdrawal amount?",
         "How much money was withdrawn?",
         "What is the total amount withdrawn?",
-        "How much was withdrawn?"
+        "How much was withdrawn?",
     ],
-
     "highest_transaction": [
         "What is the highest transaction?",
         "Which transaction has the highest amount?",
         "What was the largest transaction?",
-        "What is the maximum transaction amount?"
+        "What is the maximum transaction amount?",
     ],
-
     "lowest_transaction": [
         "What is the lowest transaction?",
         "Which transaction has the lowest amount?",
         "What was the smallest transaction?",
-        "What is the minimum transaction amount?"
+        "What is the minimum transaction amount?",
     ],
     "transaction_lookup": [
-    "What transactions happened?",
-    "Show me the transactions",
-    "Which transaction occurred?",
-    "What happened in the transactions?",
-    "What withdrawal happened?",
-    "What deposit happened?",
-    "Show me a withdrawal transaction",
-    "Show me a deposit transaction"
-]
+        "What transactions happened?",
+        "Show me the transactions",
+        "Which transaction occurred?",
+        "What happened in the transactions?",
+        "What withdrawal happened?",
+        "What deposit happened?",
+        "Show me a withdrawal transaction",
+        "Show me a deposit transaction",
+    ],
 }
 
-
-BRANCHES = [
-    "Karachi",
-    "Lahore",
-    "Islamabad"
-]
 
 BRANCH_EXAMPLES = {
     "Karachi": [
         "transactions in Karachi",
         "money movement at Karachi branch",
         "Karachi branch transactions",
-        "financial activity in Karachi"
+        "financial activity in Karachi",
     ],
-
     "Lahore": [
         "transactions in Lahore",
         "money movement at Lahore branch",
         "Lahore branch transactions",
-        "financial activity in Lahore"
+        "financial activity in Lahore",
     ],
-
     "Islamabad": [
         "transactions in Islamabad",
         "money movement at Islamabad branch",
         "Islamabad branch transactions",
-        "financial activity in Islamabad"
-    ]
+        "financial activity in Islamabad",
+    ],
 }
 
-TRANSACTION_TYPES = [
-    "Deposit",
-    "Withdrawal"
-]
 
 TRANSACTION_TYPE_EXAMPLES = {
     "Deposit": [
         "money was deposited",
         "cash was added",
         "money came into the account",
-        "funds were added"
+        "funds were added",
     ],
     "Withdrawal": [
         "money was withdrawn",
         "money was taken out",
         "cash was taken from the account",
-        "funds were removed"
-    ]
+        "funds were removed",
+    ],
 }
 
-def _build_intent_embeddings():
-    """
-    Create embeddings for all predefined intent examples.
-    """
 
+def _build_embeddings(example_groups):
+    """
+    Build labels and embeddings from grouped examples.
+    """
     labels = []
     examples = []
 
-    for intent, intent_examples in INTENT_EXAMPLES.items():
-        for example in intent_examples:
-            labels.append(intent)
+    for label, label_examples in example_groups.items():
+        for example in label_examples:
+            labels.append(label)
             examples.append(example)
 
     embeddings = create_embeddings(examples)
@@ -119,149 +103,140 @@ def _build_intent_embeddings():
     return labels, embeddings
 
 
-INTENT_LABELS, INTENT_EMBEDDINGS = _build_intent_embeddings()
-
-def _build_transaction_type_embeddings():
-    """
-    Create embeddings for transaction type examples.
-    """
-
-    labels = []
-    examples = []
-
-    for transaction_type, type_examples in TRANSACTION_TYPE_EXAMPLES.items():
-        for example in type_examples:
-            labels.append(transaction_type)
-            examples.append(example)
-
-    embeddings = create_embeddings(examples)
-
-    return labels, embeddings
-TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_EMBEDDINGS = (
-    _build_transaction_type_embeddings()
+INTENT_LABELS, INTENT_EMBEDDINGS = _build_embeddings(
+    INTENT_EXAMPLES
 )
 
-def _build_branch_embeddings():
+BRANCH_LABELS, BRANCH_EMBEDDINGS = _build_embeddings(
+    BRANCH_EXAMPLES
+)
+
+TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_EMBEDDINGS = (
+    _build_embeddings(TRANSACTION_TYPE_EXAMPLES)
+)
+
+
+def _find_best_match(
+    query_embedding,
+    labels,
+    embeddings,
+    minimum_score=None,
+):
     """
-    Create embeddings for branch examples.
+    Find the most similar label using a pre-computed
+    query embedding.
     """
-    labels=[]
-    examples=[]
-
-    for branch,branch_examples in BRANCH_EXAMPLES.items():
-        for example in branch_examples:
-            labels.append(branch)
-            examples.append(example)
-    embeddings = create_embeddings(examples)
-    return labels,embeddings
-
-BRANCH_LABELS,BRANCH_EMBEDDINGS = _build_branch_embeddings()
-
-def _find_branch(query: str):
-    """
-    Detect branch using semantic similarity.
-    Return None when no branch is sufficiently relevant.
-    """
-
-    query_embedding = create_embeddings([query])[0]
-
     query_norm = np.linalg.norm(query_embedding)
 
-    branch_norms = np.linalg.norm(
-        BRANCH_EMBEDDINGS,
-        axis=1
+    embedding_norms = np.linalg.norm(
+        embeddings,
+        axis=1,
     )
 
     similarities = (
-        BRANCH_EMBEDDINGS @ query_embedding
+        embeddings @ query_embedding
     ) / (
-        branch_norms * query_norm
+        embedding_norms * query_norm
     )
 
     best_index = int(np.argmax(similarities))
     best_score = float(similarities[best_index])
 
-    logger.info(
-        f"Best branch match: "
-        f"{BRANCH_LABELS[best_index]} "
-        f"(score={best_score:.4f})"
+    if (
+        minimum_score is not None
+        and best_score < minimum_score
+    ):
+        return None, best_score
+
+    return labels[best_index], best_score
+
+
+def _find_branch(query_embedding):
+    """
+    Detect branch using semantic similarity.
+    """
+    branch, score = _find_best_match(
+        query_embedding,
+        BRANCH_LABELS,
+        BRANCH_EMBEDDINGS,
+        minimum_score=0.65,
     )
 
-    if best_score < 0.65:
-        return None
+    if branch:
+        logger.info(
+            f"Best branch match: {branch} "
+            f"(score={score:.4f})"
+        )
 
-    return BRANCH_LABELS[best_index]
+    return branch
 
-def _find_transaction_type(query: str):
+
+def _find_transaction_type(query_embedding):
     """
     Detect transaction type using semantic similarity.
     """
-
-    query_embedding = create_embeddings([query])[0]
-
-    query_norm = np.linalg.norm(query_embedding)
-    type_norms = np.linalg.norm(
+    transaction_type, score = _find_best_match(
+        query_embedding,
+        TRANSACTION_TYPE_LABELS,
         TRANSACTION_TYPE_EMBEDDINGS,
-        axis=1
+        minimum_score=0.65,
     )
 
-    similarities = (
-        TRANSACTION_TYPE_EMBEDDINGS @ query_embedding
-    ) / (
-        type_norms * query_norm
-    )
+    if transaction_type:
+        logger.info(
+            f"Best transaction type match: {transaction_type} "
+            f"(score={score:.4f})"
+        )
 
-    best_index = int(np.argmax(similarities))
+    return transaction_type
 
-    return TRANSACTION_TYPE_LABELS[best_index]
 
 def parse_query(query: str):
     """
     Understand a financial query using semantic similarity.
     """
-
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
 
+    # Create the query embedding only once.
     query_embedding = create_embeddings([query])[0]
 
-    query_norm = np.linalg.norm(query_embedding)
-
-    intent_norms = np.linalg.norm(
+    intent, confidence = _find_best_match(
+        query_embedding,
+        INTENT_LABELS,
         INTENT_EMBEDDINGS,
-        axis=1
     )
 
-    similarities = (
-        INTENT_EMBEDDINGS @ query_embedding
-    ) / (
-        intent_norms * query_norm
-    )
+    
+    branch = _find_branch(query_embedding)
 
-    best_index = int(np.argmax(similarities))
+    query_lower = query.lower()
 
-    intent = INTENT_LABELS[best_index]
-    confidence = float(similarities[best_index])
+    # Detect transaction type directly from the query.
+    if "deposit" in query_lower:
+        transaction_type = "Deposit"
 
-    branch = _find_branch(query)
+    elif "withdrawal" in query_lower or "withdraw" in query_lower:
+        transaction_type = "Withdrawal"
 
-    if intent in {
-        "total_deposit",
-        "total_withdrawal"
-    }:
-        transaction_type = _find_transaction_type(query)
+    elif intent == "total_deposit":
+        transaction_type = "Deposit"
+
+    elif intent == "total_withdrawal":
+        transaction_type = "Withdrawal"
+
     else:
         transaction_type = None
+
 
     result = {
         "intent": intent,
         "branch": branch,
         "transaction_type": transaction_type,
-        "confidence": confidence
+        "confidence": confidence,
+        "query_embedding": query_embedding,
     }
 
-    logger.info(
-        f"Query parsed: {result}"
-    )
+    logger.info(f"Query parsed: {result}")
 
     return result
