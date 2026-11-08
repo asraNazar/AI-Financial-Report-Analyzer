@@ -72,6 +72,19 @@ def calculate_financial_answer(
 
     location = f" in {branch}" if branch else ""
 
+    # Filter by minimum amount
+    minimum_amount = parsed_query.get("minimum_amount")
+    if minimum_amount is not None:
+        filtered_df = filtered_df[
+            filtered_df["Amount"] >= minimum_amount
+        ]
+
+    # Filter by maximum amount
+    maximum_amount = parsed_query.get("maximum_amount")
+    if maximum_amount is not None:
+        filtered_df = filtered_df[
+            filtered_df["Amount"] <= maximum_amount
+        ]
     # Total calculations
     total_intents = {
         "total_withdrawal": "Total withdrawal amount",
@@ -161,12 +174,16 @@ def retrieve_context(
         else parsed_query["transaction_type"]
     )
 
+    minimum_amount = parsed_query.get("minimum_amount")
+    maximum_amount = parsed_query.get("maximum_amount")
     results = search_transactions(
         query,
         top_k=top_k,
         branch=selected_branch,
         transaction_type=selected_type,
         query_embedding=parsed_query["query_embedding"],
+        minimum_amount=minimum_amount,
+        maximum_amount=maximum_amount
     )
 
     if not results:
@@ -312,12 +329,16 @@ def get_clean_transaction_data(
     if parsed_query is None:
         parsed_query = parse_query(query)
 
+    minimum_amount=parsed_query.get("minimum_amount")
+    maximum_amount=parsed_query.get("maximum_amount")
     results = search_transactions(
         query,
         top_k=top_k,
         branch=parsed_query["branch"],
         transaction_type=parsed_query["transaction_type"],
         query_embedding=parsed_query["query_embedding"],
+        minimum_amount=minimum_amount,
+        maximum_amount=maximum_amount
     )
 
     if not results:
